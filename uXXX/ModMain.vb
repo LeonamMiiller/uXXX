@@ -19,7 +19,7 @@ Module ModMain
         Console.WriteLine("uXXX v0.1 by gdkchan")
         Dim Args() As String = Environment.GetCommandLineArgs
         Dim File_Name As String
-        If LCase(Path.GetExtension(Args(0))) <> "xxx" Then
+        If LCase(Path.GetExtension(Args(0))) <> ".xxx" Then
             Console.ForegroundColor = ConsoleColor.White
             Console.WriteLine("Digite o nome do arquivo:")
             Console.ResetColor()
