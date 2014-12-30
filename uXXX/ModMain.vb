@@ -61,6 +61,7 @@ Module ModMain
                 Dim Export_Table_Offset As Integer = Read32(Data, Base_Offset + 16)
                 Dim Import_Table_Count As Integer = Read32(Data, Base_Offset + 20)
                 Dim Import_Table_Offset As Integer = Read32(Data, Base_Offset + 24)
+                Dim Zero_Pad_Length As Integer = Read32(Data, Base_Offset + 32) - Read32(Data, Base_Offset + 28)
 
                 Dim GUID As String = "0x"
                 For Offset As Integer = Base_Offset + 48 To Base_Offset + 48 + 15
@@ -77,6 +78,7 @@ Module ModMain
                 Header_XML.AppendLine(TAB & "<CookerVersion>" & Cooker_Version & "</CookerVersion>")
                 Header_XML.AppendLine(TAB & "<GenerationsCount>" & GensCount & "</GenerationsCount>")
                 Header_XML.AppendLine(TAB & "<ExFlags>" & "0x" & Hex(Data_2).PadLeft(8, "0"c) & "</ExFlags>") 'Não sei o que é D:
+                Header_XML.AppendLine(TAB & "<ZeroPadLength>" & Zero_Pad_Length & "</ZeroPadLength>") 'Não sei o que é D:
 
                 'Name Table
                 Header_XML.AppendLine(TAB & "<Names>")
@@ -94,23 +96,8 @@ Module ModMain
                 Dim EOffset As Integer = Export_Table_Offset
                 For Entry As Integer = 0 To Export_Table_Count - 1
                     Dim FType As Integer = Read32(Data, EOffset)
-                    Dim Entry_Length As Integer
-                    Dim Type As File_Type
-                    Select Case FType
-                        Case -1
-                            Type = File_Type.Package
-                            Entry_Length = &H48
-                        Case -2
-                            Type = File_Type.ObjectReferencer
-                            Entry_Length = &H44
-                        Case -3
-                            Type = File_Type.SoundNodeWave
-                            Entry_Length = &H44
-                        Case Else
-                            Console.ForegroundColor = ConsoleColor.Red
-                            Console.WriteLine("[Alerta] Classe de objeto desconhecida: " & FType)
-                            Console.ForegroundColor = ConsoleColor.White
-                    End Select
+                    Dim Length As Integer = Read32(Data, EOffset + 44)
+                    Dim Entry_Length As Integer = &H44 + (Length * 4)
 
                     Dim Name_Index As Integer = Read32(Data, EOffset + 12)
                     Dim Object_Reference As Integer = Read32(Data, EOffset + 16) - 1
@@ -129,8 +116,9 @@ Module ModMain
                     Header_XML.AppendLine(TAB_3 & "<ObjReference>" & Object_Reference & "</ObjReference>")
                     Header_XML.AppendLine(TAB_3 & "<Flags>" & "0x" & Hex(Flags_1).PadLeft(16, "0"c) & "</Flags>")
                     Header_XML.AppendLine(TAB_3 & "<ExporterFlags>" & "0x" & Hex(Exporter_Flags).PadLeft(8, "0"c) & "</ExporterFlags>")
+                    Header_XML.AppendLine(TAB_3 & "<EntryLength>" & Length & "</EntryLength>")
                     Dim ExData As String = "0x"
-                    For Offset As Integer = EOffset + 44 To EOffset + Entry_Length - 1
+                    For Offset As Integer = EOffset + 48 To EOffset + Entry_Length - 1
                         ExData &= Hex(Data(Offset)).PadLeft(2, "0"c)
                     Next
                     Header_XML.AppendLine(TAB_3 & "<ExData>" & ExData & "</ExData>")
@@ -273,16 +261,12 @@ Module ModMain
             For Each Entry As Match In Export_Entries
                 Dim Content As String = Entry.Groups(1).Value
 
-                Dim FType As Integer = Integer.Parse(Regex.Match(Content, "<Class>([-]?\d+)</Class>", RegexOptions.IgnoreCase).Groups(1).Value)
-                Select Case FType
-                    Case -1 : Export_Length += &H48
-                    Case -2 : Export_Length += &H44
-                    Case -3 : Export_Length += &H44
-                End Select
+                Dim Length As Integer = Integer.Parse(Regex.Match(Content, "<EntryLength>([-]?\d+)</EntryLength>", RegexOptions.IgnoreCase).Groups(1).Value)
+                Export_Length += &H44 + (Length * 4)
             Next
             Dim File_Offset As Integer = Export_Offset + Export_Length
             Write32(Data, Base_Offset + 28, File_Offset)
-            If File_Offset And &HF > 0 Then File_Offset = (File_Offset And &HFFFFFFF0) + &H10
+            File_Offset += Integer.Parse(Regex.Match(Header_Section, "<ZeroPadLength>(\d+)</ZeroPadLength>", RegexOptions.IgnoreCase).Groups(1).Value)
             Write32(Data, 8, File_Offset)
             Write32(Data, Base_Offset + 32, File_Offset)
 
@@ -302,6 +286,7 @@ Module ModMain
                 Dim Object_Reference As Integer = Integer.Parse(Regex.Match(Content, "<ObjReference>([-]?\d+)</ObjReference>", RegexOptions.IgnoreCase).Groups(1).Value) + 1
                 Dim Flags_1 As UInt64 = Convert.ToUInt64(Regex.Match(Content, "<Flags>0x([0-9A-Fa-f]+)</Flags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
                 Dim Exporter_Flags As Integer = Convert.ToInt32(Regex.Match(Header_Section, "<Flags>0x([0-9A-Fa-f]+)</Flags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
+                Dim Length As Integer = Integer.Parse(Regex.Match(Content, "<EntryLength>([-]?\d+)</EntryLength>", RegexOptions.IgnoreCase).Groups(1).Value)
 
                 Write32(Data, Export_Offset, FType)
                 Write32(Data, Export_Offset + 12, Name_Index)
@@ -310,6 +295,7 @@ Module ModMain
                 Write32(Data, Export_Offset + 32, File_Data.Length)
                 Write32(Data, Export_Offset + 36, File_Offset)
                 Write32(Data, Export_Offset + 40, Exporter_Flags)
+                Write32(Data, Export_Offset + 44, Length)
                 Dim ExData As String = Regex.Match(Content, "<ExData>0x([0-9A-Fa-f]+)</ExData>", RegexOptions.IgnoreCase).Groups(1).Value
                 For Position As Integer = 0 To ExData.Length - 1 Step 2
                     Dim Hex_Value As String = ExData.Substring(Position, 2)
@@ -320,14 +306,10 @@ Module ModMain
                 Data.Seek(File_Offset, SeekOrigin.Begin)
                 Data.Write(File_Data, 0, File_Data.Length)
                 File_Offset += File_Data.Length
-                Select Case FType
-                    Case -1 : Export_Offset += &H48
-                    Case -2 : Export_Offset += &H44
-                    Case -3 : Export_Offset += &H44
-                End Select
+                Export_Offset += &H44 + (Length * 4)
             Next
 
-            File.WriteAllBytes(File_Name & ".xxx", Data.ToArray())
+            File.WriteAllBytes(File_Name & ".XXX", Data.ToArray())
         Else
             Console.ForegroundColor = ConsoleColor.Red
             Console.WriteLine("Arquivo/diretório não encontrado!")
