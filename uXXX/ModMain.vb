@@ -127,7 +127,7 @@ Module ModMain
                                 Dim Subtitle As String = Nothing
                                 For Index As Integer = 0 To Text_Count - 1
                                     Dim Text_Length As Integer = Read32(Data, File_Offset + Sub_Offset)
-                                    Subtitle &= Encoding.UTF8.GetString(Data, File_Offset + Sub_Offset + 4, Text_Length - 1)
+                                    Subtitle &= ReadStr(Data, File_Offset + Sub_Offset + 4, Text_Length - 1)
                                     If Index < Text_Count - 1 Then Subtitle &= "\n"
                                     Sub_Offset += Text_Length + &H40
                                 Next
@@ -223,7 +223,7 @@ Module ModMain
             Write16(Data, 6, Version)
 
             Dim Folder_Name As String = Regex.Match(Header_Section, "<FolderName>(.+?)</FolderName>", RegexOptions.IgnoreCase).Groups(1).Value
-            Dim Bytes() As Byte = Encoding.UTF8.GetBytes(Folder_Name)
+            Dim Bytes() As Byte = Encoding.ASCII.GetBytes(Folder_Name)
             Write32(Data, 12, Bytes.Length + 1)
             Data.Write(Bytes, 0, Bytes.Length)
             Data.WriteByte(0)
@@ -257,7 +257,7 @@ Module ModMain
                 Dim Text As String = Regex.Match(Content, "<Text>(.+?)</Text>", RegexOptions.IgnoreCase).Groups(1).Value
                 Dim Text_Flags As UInt64 = Convert.ToUInt64(Regex.Match(Content, "<Flags>0x([0-9A-Fa-f]+)</Flags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
 
-                Dim Text_Bytes() As Byte = Encoding.UTF8.GetBytes(Text)
+                Dim Text_Bytes() As Byte = Encoding.ASCII.GetBytes(Text)
                 Write32(Data, Names_Offset, Text_Bytes.Length + 1)
                 Data.Write(Text_Bytes, 0, Text_Bytes.Count)
                 Data.WriteByte(0)
@@ -327,7 +327,9 @@ Module ModMain
                 Dim Length As Integer = Integer.Parse(Regex.Match(Content, "<EntryLength>([-]?\d+)</EntryLength>", RegexOptions.IgnoreCase).Groups(1).Value)
 
                 If File.Exists(Path.Combine(File_Name, "Textos.txt")) And FType = -3 Then 'Re-insere o texto
-                    Dim Match As Match = Regex.Match(File.ReadAllText(Path.Combine(File_Name, "Textos.txt")), "\[" & Temp_File & "\]\r\n(.+?)\r\n\[END\]")
+                    Dim TempTxtData() As Byte = File.ReadAllBytes(Path.Combine(File_Name, "Textos.txt"))
+                    Dim SubText As String = Encoding.UTF8.GetString(TempTxtData)
+                    Dim Match As Match = Regex.Match(SubText, "\[" & Temp_File & "\]\r\n(.+?)\r\n\[END\]")
                     If Match.Success Then
                         Dim Text_Count As Integer = Read32(File_Data, &H8C)
                         Dim Sub_Offset As Integer = &HA8
@@ -352,7 +354,7 @@ Module ModMain
                                 Dim Index As Integer = 0
                                 For Each Subtitle As String In Subs
                                     Dim Text_Length As Integer = Read32(File_Data, OriginalPos)
-                                    Dim SubBytes() As Byte = Encoding.UTF8.GetBytes(Subtitle.TrimStart())
+                                    Dim SubBytes() As Byte = Get_Bytes_From_Text(Subtitle.TrimStart())
                                     Write32(Temp, Temp.Position, SubBytes.Length + 1)
                                     Temp.Write(SubBytes, 0, SubBytes.Length)
                                     Temp.WriteByte(0)
@@ -497,5 +499,14 @@ Module ModMain
         Stream.WriteByte(Convert.ToByte((Value >> 8) And &HFF))
         Stream.WriteByte(Convert.ToByte(Value And &HFF))
     End Sub
+
+    Private Function Get_Bytes_From_Text(Text As String) As Byte()
+        Dim Out(Text.Length - 1) As Byte
+        For i As Integer = 0 To Text.Length - 1
+            Dim Character As String = Text.Substring(i, 1)
+            Out(i) = AscW(Character) And &HFF
+        Next
+        Return Out
+    End Function
 
 End Module
