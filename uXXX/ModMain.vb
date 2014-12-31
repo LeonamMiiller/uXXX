@@ -36,6 +36,7 @@ Module ModMain
             Dim Magic As Integer = Read32(Data, 0)
             If Magic = &H9E2A83C1 Then
                 Dim Header_XML As New StringBuilder
+                Dim Text_Out As New StringBuilder
                 Header_XML.AppendLine("<Header>")
 
                 Dim Licensee_Version As Integer = Read16(Data, 4)
@@ -111,6 +112,31 @@ Module ModMain
                     Dim Exporter_Flags As Integer = Read32(Data, EOffset + 40)
                     '32 bytes que eu não sei o que é (pelo menos no Package)
 
+                    If FType = -3 Then 'É SoundNodeWave, então podemos tentar extrair legendas
+                        Dim Text_Count As Integer = Read32(Data, File_Offset + &H8C)
+                        Dim Sub_Offset As Integer = &HA8
+                        For Index As Integer = 0 To Text_Count - 1
+                            Dim Len As Integer = Read32(Data, File_Offset + Sub_Offset)
+                            Sub_Offset += Len + &H40
+                        Next
+                        Sub_Offset += &H20
+                        If Sub_Offset < File_Length Then
+                            If ReadStr(Data, File_Offset + Sub_Offset, 3) = "INT" Then 'Magic, texto em inglês
+                                Sub_Offset += &H38
+                                Dim Subtitle As String = Nothing
+                                For Index As Integer = 0 To Text_Count - 1
+                                    Dim Text_Length As Integer = Read32(Data, File_Offset + Sub_Offset)
+                                    Subtitle &= Encoding.UTF8.GetString(Data, File_Offset + Sub_Offset + 4, Text_Length - 1)
+                                    If Index < Text_Count - 1 Then Subtitle &= "\n"
+                                    Sub_Offset += Text_Length + &H40
+                                Next
+                                Text_Out.AppendLine("[" & Name & "]")
+                                Text_Out.AppendLine(Subtitle)
+                                Text_Out.AppendLine("[END]")
+                            End If
+                        End If
+                    End If
+
                     Header_XML.AppendLine(TAB_2 & "<Entry>")
                     Header_XML.AppendLine(TAB_3 & "<File>" & Name & "</File>")
                     Header_XML.AppendLine(TAB_3 & "<NameIndex>" & Name_Index & "</NameIndex>" & " <!--" & ReadName(Data, Names_Offset, Names_Count, Name_Index) & "-->")
@@ -163,6 +189,11 @@ Module ModMain
 
                 Console.WriteLine("Salvando ""Header.xml""...")
                 File.WriteAllText(Path.Combine(Work_Dir, "Header.xml"), Header_XML.ToString)
+
+                If Text_Out.Length > 0 Then
+                    Console.WriteLine("Salvando ""Textos.txt""...")
+                    File.WriteAllText(Path.Combine(Work_Dir, "Textos.txt"), Text_Out.ToString)
+                End If
             Else
                 Console.ForegroundColor = ConsoleColor.Red
                 Console.WriteLine("Esse arquivo não é XXX!")
@@ -292,29 +323,77 @@ Module ModMain
                 Dim Exporter_Flags As Integer = Convert.ToInt32(Regex.Match(Content, "<ExporterFlags>0x([0-9A-Fa-f]+)</ExporterFlags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
                 Dim Length As Integer = Integer.Parse(Regex.Match(Content, "<EntryLength>([-]?\d+)</EntryLength>", RegexOptions.IgnoreCase).Groups(1).Value)
 
-                Write32(Data, Export_Offset, FType)
-                Write32(Data, Export_Offset + 8, Reference_Index)
-                Write32(Data, Export_Offset + 12, Name_Index)
-                Write32(Data, Export_Offset + 16, Object_Reference)
-                Write64(Data, Export_Offset + 24, Flags_1)
-                Write32(Data, Export_Offset + 32, File_Data.Length)
-                Write32(Data, Export_Offset + 36, File_Offset)
-                Write32(Data, Export_Offset + 40, Exporter_Flags)
-                Write32(Data, Export_Offset + 44, Length)
-                Dim ExData As String = Regex.Match(Content, "<ExData>0x([0-9A-Fa-f]+)</ExData>", RegexOptions.IgnoreCase).Groups(1).Value
-                For Position As Integer = 0 To ExData.Length - 1 Step 2
-                    Dim Hex_Value As String = ExData.Substring(Position, 2)
-                    Dim Value As Byte = Convert.ToByte(Convert.ToInt32(Hex_Value, 16) And &HFF)
-                    Data.WriteByte(Value)
-                Next
+                If File.Exists(Path.Combine(File_Name, "Textos.txt")) And FType = -3 Then 'Re-insere o texto
+                    Dim Text_Count As Integer = Read32(File_Data, &H8C)
+                    Dim Sub_Offset As Integer = &HA8
+                    For Index As Integer = 0 To Text_Count - 1
+                        Dim Len As Integer = Read32(File_Data, Sub_Offset)
+                        Sub_Offset += Len + &H40
+                    Next
+                    Sub_Offset += &H20
+                    If Sub_Offset < File_Data.Length Then
+                        If ReadStr(File_Data, Sub_Offset, 3) = "INT" Then 'Magic, texto em inglês
+                            Dim Match As Match = Regex.Match(File.ReadAllText(Path.Combine(File_Name, "Textos.txt")), "\[" & Temp_File & "\]\r\n(.+?)\r\n\[END\]")
+                            If Match.Success Then
+                                Dim Temp As New MemoryStream()
+                                Sub_Offset += &H38
+                                Dim Subs(0) As String
+                                If Match.Groups(1).Value.IndexOf("\n") > -1 Then
+                                    Subs = Regex.Split(Match.Groups(1).Value, "\\n")
+                                Else
+                                    Subs(0) = Match.Groups(1).Value
+                                End If
 
-                Data.Seek(File_Offset, SeekOrigin.Begin)
-                Data.Write(File_Data, 0, File_Data.Length)
-                File_Offset += File_Data.Length
-                Export_Offset += &H44 + (Length * 4)
+                                Temp.Write(File_Data, 0, Sub_Offset)
+                                Dim OriginalPos As Integer = Sub_Offset
+                                Dim Index As Integer = 0
+                                For Each Subtitle As String In Subs
+                                    Dim Text_Length As Integer = Read32(File_Data, OriginalPos)
+                                    Dim SubBytes() As Byte = Encoding.UTF8.GetBytes(Subtitle.TrimStart())
+                                    Write32(Temp, Temp.Position, SubBytes.Length + 1)
+                                    Temp.Write(SubBytes, 0, SubBytes.Length)
+                                    Temp.WriteByte(0)
+                                    Dim Val As Integer = OriginalPos + 4 + Text_Length
+                                    If Index = Text_Count - 1 Then
+                                        Temp.Write(File_Data, Val, File_Data.Length - Val)
+                                    Else
+                                        Temp.Write(File_Data, Val, &H3C)
+                                    End If
+
+                                    OriginalPos += Text_Length + &H40
+                                    Index += 1
+                                    If Index > Text_Count - 1 Then Exit For
+                                Next
+                                File_Data = Temp.ToArray()
+                            End If
+                        End If
+                        End If
+                    End If
+
+                    Write32(Data, Export_Offset, FType)
+                    Write32(Data, Export_Offset + 8, Reference_Index)
+                    Write32(Data, Export_Offset + 12, Name_Index)
+                    Write32(Data, Export_Offset + 16, Object_Reference)
+                    Write64(Data, Export_Offset + 24, Flags_1)
+                    Write32(Data, Export_Offset + 32, File_Data.Length)
+                    Write32(Data, Export_Offset + 36, File_Offset)
+                    Write32(Data, Export_Offset + 40, Exporter_Flags)
+                    Write32(Data, Export_Offset + 44, Length)
+                    Dim ExData As String = Regex.Match(Content, "<ExData>0x([0-9A-Fa-f]+)</ExData>", RegexOptions.IgnoreCase).Groups(1).Value
+                    For Position As Integer = 0 To ExData.Length - 1 Step 2
+                        Dim Hex_Value As String = ExData.Substring(Position, 2)
+                        Dim Value As Byte = Convert.ToByte(Convert.ToInt32(Hex_Value, 16) And &HFF)
+                        Data.WriteByte(Value)
+                    Next
+
+                    Data.Seek(File_Offset, SeekOrigin.Begin)
+                    Data.Write(File_Data, 0, File_Data.Length)
+                    File_Offset += File_Data.Length
+                    Export_Offset += &H44 + (Length * 4)
             Next
 
             File.WriteAllBytes(File_Name & ".XXX", Data.ToArray())
+            Data.Close()
         Else
             Console.ForegroundColor = ConsoleColor.Red
             Console.WriteLine("Arquivo/diretório não encontrado!")
