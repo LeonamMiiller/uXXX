@@ -116,7 +116,7 @@ Module ModMain
                     Header_XML.AppendLine(TAB_3 & "<NameIndex>" & Name_Index & "</NameIndex>" & " <!--" & ReadName(Data, Names_Offset, Names_Count, Name_Index) & "-->")
                     Header_XML.AppendLine(TAB_3 & "<Class>" & FType & "</Class>")
                     Header_XML.AppendLine(TAB_3 & "<ObjReference>" & Object_Reference & "</ObjReference>")
-                    Header_XML.AppendLine(TAB_3 & "<ReferenceIndex>" & Reference_Index & "</ReferenceIndex>")
+                    Header_XML.AppendLine(TAB_3 & "<SNWIndex>" & Reference_Index & "</SNWIndex>")
                     Header_XML.AppendLine(TAB_3 & "<Flags>" & "0x" & Hex(Flags_1).PadLeft(16, "0"c) & "</Flags>")
                     Header_XML.AppendLine(TAB_3 & "<ExporterFlags>" & "0x" & Hex(Exporter_Flags).PadLeft(8, "0"c) & "</ExporterFlags>")
                     Header_XML.AppendLine(TAB_3 & "<EntryLength>" & Length & "</EntryLength>")
@@ -287,7 +287,7 @@ Module ModMain
                 Dim FType As Integer = Integer.Parse(Regex.Match(Content, "<Class>([-]?\d+)</Class>", RegexOptions.IgnoreCase).Groups(1).Value)
                 Dim Name_Index As Integer = Integer.Parse(Regex.Match(Content, "<NameIndex>(\d+)</NameIndex>", RegexOptions.IgnoreCase).Groups(1).Value)
                 Dim Object_Reference As Integer = Integer.Parse(Regex.Match(Content, "<ObjReference>([-]?\d+)</ObjReference>", RegexOptions.IgnoreCase).Groups(1).Value) + 1
-                Dim Reference_Index As Integer = Integer.Parse(Regex.Match(Content, "<ReferenceIndex>([-]?\d+)</ReferenceIndex>", RegexOptions.IgnoreCase).Groups(1).Value)
+                Dim Reference_Index As Integer = Integer.Parse(Regex.Match(Content, "<SNWIndex>([-]?\d+)</SNWIndex>", RegexOptions.IgnoreCase).Groups(1).Value)
                 Dim Flags_1 As UInt64 = Convert.ToUInt64(Regex.Match(Content, "<Flags>0x([0-9A-Fa-f]+)</Flags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
                 Dim Exporter_Flags As Integer = Convert.ToInt32(Regex.Match(Content, "<ExporterFlags>0x([0-9A-Fa-f]+)</ExporterFlags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
                 Dim Length As Integer = Integer.Parse(Regex.Match(Content, "<EntryLength>([-]?\d+)</EntryLength>", RegexOptions.IgnoreCase).Groups(1).Value)
