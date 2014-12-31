@@ -61,7 +61,8 @@ Module ModMain
                 Dim Export_Table_Offset As Integer = Read32(Data, Base_Offset + 16)
                 Dim Import_Table_Count As Integer = Read32(Data, Base_Offset + 20)
                 Dim Import_Table_Offset As Integer = Read32(Data, Base_Offset + 24)
-                Dim Zero_Pad_Length As Integer = Read32(Data, Base_Offset + 32) - Read32(Data, Base_Offset + 28)
+                Dim Zero_Pad_Length As Integer
+                If Read32(Data, Base_Offset + 32) > 0 Then Zero_Pad_Length = Read32(Data, Base_Offset + 32) - Read32(Data, Base_Offset + 28)
 
                 Dim GUID As String = "0x"
                 For Offset As Integer = Base_Offset + 48 To Base_Offset + 48 + 15
@@ -247,7 +248,7 @@ Module ModMain
                 Write32(Data, Import_Offset, Package_Index)
                 Write32(Data, Import_Offset + 8, Class_Index)
                 Write32(Data, Import_Offset + 16, Outer)
-                Write32(Data, Import_Offset + 40, Object_Index)
+                Write32(Data, Import_Offset + 20, Object_Index)
 
                 Import_Offset += 28
             Next
