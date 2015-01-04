@@ -75,15 +75,15 @@ Module ModMain
                     Header_XML.AppendLine(TAB & "<GUID>" & GUID & "</GUID>")
 
                     Dim GensCount As Integer = Read32(Data, Base_Offset + 64)
-                    Dim Engine_Version As Integer = Read32(Data, Base_Offset + 80)
-                    Dim Cooker_Version As Integer = Read32(Data, Base_Offset + 84)
-                    Dim Data_2 As Integer = Read32(Data, Base_Offset + 96)
+                    Dim Engine_Version As Integer = Read32(Data, Base_Offset + (GensCount * 12) + 68)
+                    Dim Cooker_Version As Integer = Read32(Data, Base_Offset + (GensCount * 12) + 72)
+                    Dim Data_2 As Integer = Read32(Data, Base_Offset + (GensCount * 12) + 84)
 
                     Header_XML.AppendLine(TAB & "<EngineVersion>" & Engine_Version & "</EngineVersion>")
                     Header_XML.AppendLine(TAB & "<CookerVersion>" & Cooker_Version & "</CookerVersion>")
                     Header_XML.AppendLine(TAB & "<GenerationsCount>" & GensCount & "</GenerationsCount>")
                     Header_XML.AppendLine(TAB & "<ExFlags>" & "0x" & Hex(Data_2).PadLeft(8, "0"c) & "</ExFlags>") 'Não sei o que é D:
-                    Header_XML.AppendLine(TAB & "<ZeroPadLength>" & Zero_Pad_Length & "</ZeroPadLength>") 'Não sei o que é D:
+                    Header_XML.AppendLine(TAB & "<ZeroPadLength>" & Zero_Pad_Length & "</ZeroPadLength>")
 
                     'Name Table
                     Header_XML.AppendLine(TAB & "<Names>")
