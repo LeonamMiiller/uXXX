@@ -16,7 +16,7 @@ Module ModMain
     Sub Main()
         Console.Title = "uXXX Beta"
         Console.ForegroundColor = ConsoleColor.Cyan
-        Console.WriteLine("uXXX v0.1 by gdkchan")
+        Console.WriteLine("uXXX v0.2 by gdkchan")
         Dim Args() As String = Environment.GetCommandLineArgs
         Dim Remaining_Args As Integer = Args.Count - 1
         Dim CurrArg As Integer = 1
@@ -25,7 +25,7 @@ Module ModMain
             If Args.Count < 2 Then
                 Console.ForegroundColor = ConsoleColor.White
                 Console.WriteLine("Digite o nome do arquivo:")
-                Console.ResetColor()
+                Console.ForegroundColor = ConsoleColor.Gray
                 File_Name = Console.ReadLine
             Else
                 File_Name = Args(CurrArg)
@@ -75,6 +75,7 @@ Module ModMain
                     Header_XML.AppendLine(TAB & "<GUID>" & GUID & "</GUID>")
 
                     Dim Generations_Count As Integer = Read32(Data, Base_Offset + 64)
+                    Dim Net_Object_Count As Integer = If(Generations_Count > 0, Read32(Data, Base_Offset + 76), 0)
                     Dim Engine_Version As Integer = Read32(Data, Base_Offset + (Generations_Count * 12) + 68)
                     Dim Cooker_Version As Integer = Read32(Data, Base_Offset + (Generations_Count * 12) + 72)
                     Dim Data_2 As Integer = Read32(Data, Base_Offset + (Generations_Count * 12) + 84)
@@ -82,6 +83,7 @@ Module ModMain
                     Header_XML.AppendLine(TAB & "<EngineVersion>" & Engine_Version & "</EngineVersion>")
                     Header_XML.AppendLine(TAB & "<CookerVersion>" & Cooker_Version & "</CookerVersion>")
                     Header_XML.AppendLine(TAB & "<GenerationsCount>" & Generations_Count & "</GenerationsCount>")
+                    Header_XML.AppendLine(TAB & "<NetObjCount>" & Net_Object_Count & "</NetObjCount>")
                     Header_XML.AppendLine(TAB & "<ExFlags>" & "0x" & Hex(Data_2).PadLeft(8, "0"c) & "</ExFlags>") 'Não sei o que é D:
                     Header_XML.AppendLine(TAB & "<ZeroPadLength>" & Zero_Pad_Length & "</ZeroPadLength>")
 
@@ -100,16 +102,19 @@ Module ModMain
 
                     Dim EOffset As Integer = Export_Table_Offset
                     For Entry As Integer = 0 To Export_Table_Count - 1
-                        Dim FType As Integer = Read32(Data, EOffset)
+                        Dim ObjTypeRef As Integer = Read32(Data, EOffset)
+                        Dim ParentClassRef As Integer = Read32(Data, EOffset + 4)
                         Dim Length As Integer = Read32(Data, EOffset + 44)
                         Dim Entry_Length As Integer = &H44 + (Length * 4)
 
-                        Dim Reference_Index As Integer = Read32(Data, EOffset + 8)
+                        Dim OwnerRef As Integer = Read32(Data, EOffset + 8)
                         Dim Name_Index As Integer = Read32(Data, EOffset + 12)
                         Dim Object_Reference As Integer = Read32(Data, EOffset + 16) - 1
+                        Dim Name_Count As Integer = Read32(Data, EOffset + 20) - 1
                         Dim Object_Name As String = ReadName(Data, Names_Offset, Names_Count, Name_Index)
                         Dim Name As String = Object_Name
                         If Object_Reference > -1 Then Name &= "_" & Object_Reference
+                        If Name_Count > -1 Then Name &= "_" & Name_Count
                         Name &= "_" & Entry
                         Dim Flags_1 As UInt64 = Read64(Data, EOffset + 24)
                         Dim File_Length As Integer = Read32(Data, EOffset + 32)
@@ -118,7 +123,7 @@ Module ModMain
                         '32 bytes que eu não sei o que é (pelo menos no Package)
 
                         Try 'Dumpa o texto
-                            If FType = -3 Then 'É SoundNodeWave, então podemos tentar extrair legendas
+                            If ObjTypeRef = -3 Then 'É SoundNodeWave, então podemos tentar extrair legendas
                                 Dim Text_Count As Integer = Read32(Data, File_Offset + &H8C)
                                 Dim Sub_Offset As Integer = &HA8
                                 For Index As Integer = 0 To Text_Count - 1
@@ -158,9 +163,11 @@ Module ModMain
                         Header_XML.AppendLine(TAB_2 & "<Entry>")
                         Header_XML.AppendLine(TAB_3 & "<File>" & Name & "</File>")
                         Header_XML.AppendLine(TAB_3 & "<NameIndex>" & Name_Index & "</NameIndex>" & " <!--" & ReadName(Data, Names_Offset, Names_Count, Name_Index) & "-->")
-                        Header_XML.AppendLine(TAB_3 & "<Class>" & FType & "</Class>")
+                        Header_XML.AppendLine(TAB_3 & "<NameCount>" & Name_Count & "</NameCount>")
+                        Header_XML.AppendLine(TAB_3 & "<Class>" & ObjTypeRef & "</Class>")
+                        Header_XML.AppendLine(TAB_3 & "<ParentClassRef>" & ParentClassRef & "</ParentClassRef>")
                         Header_XML.AppendLine(TAB_3 & "<ObjReference>" & Object_Reference & "</ObjReference>")
-                        Header_XML.AppendLine(TAB_3 & "<SNWIndex>" & Reference_Index & "</SNWIndex>")
+                        Header_XML.AppendLine(TAB_3 & "<OwnerRef>" & OwnerRef & "</OwnerRef>")
                         Header_XML.AppendLine(TAB_3 & "<Flags>" & "0x" & Hex(Flags_1).PadLeft(16, "0"c) & "</Flags>")
                         Header_XML.AppendLine(TAB_3 & "<ExporterFlags>" & "0x" & Hex(Exporter_Flags).PadLeft(8, "0"c) & "</ExporterFlags>")
                         Header_XML.AppendLine(TAB_3 & "<EntryLength>" & Length & "</EntryLength>")
@@ -190,12 +197,14 @@ Module ModMain
                         Dim Class_Index As Integer = Read32(Data, IOffset + 8)
                         Dim Outer As Integer = Read32(Data, IOffset + 16)
                         Dim Object_Index As Integer = Read32(Data, IOffset + 20)
+                        Dim Unknow_Index As Integer = Read32(Data, IOffset + 24)
 
                         Header_XML.AppendLine(TAB_2 & "<Entry>")
                         Header_XML.AppendLine(TAB_3 & "<PackageNameIndex>" & Package_Index & "</PackageNameIndex>" & " <!--" & ReadName(Data, Names_Offset, Names_Count, Package_Index) & "-->")
                         Header_XML.AppendLine(TAB_3 & "<ClassNameIndex>" & Class_Index & "</ClassNameIndex>" & " <!--" & ReadName(Data, Names_Offset, Names_Count, Class_Index) & "-->")
                         Header_XML.AppendLine(TAB_3 & "<ObjectNameIndex>" & Object_Index & "</ObjectNameIndex>" & " <!--" & ReadName(Data, Names_Offset, Names_Count, Object_Index) & "-->")
                         Header_XML.AppendLine(TAB_3 & "<Outer>" & Outer & "</Outer>")
+                        Header_XML.AppendLine(TAB_3 & "<ExIndex>" & Unknow_Index & "</ExIndex>")
                         Header_XML.AppendLine(TAB_2 & "</Entry>")
 
                         IOffset += 28
@@ -211,6 +220,16 @@ Module ModMain
                     If Text_Out.Length > 0 Then
                         Console.WriteLine("Salvando ""Textos.txt""...")
                         File.WriteAllText(Path.Combine(Work_Dir, "Textos.txt"), Text_Out.ToString)
+                    End If
+
+                    If Base_Offset + (Generations_Count * 12) + 92 < Names_Offset Then 'Mais dados desconhecidos D:
+                        Dim Unknow_Offset As Integer = Base_Offset + (Generations_Count * 12) + 88
+                        Dim Unknow_Length As Integer = Names_Offset - Unknow_Offset
+                        Dim Unknow(Unknow_Length - 1) As Byte
+                        Buffer.BlockCopy(Data, Unknow_Offset, Unknow, 0, Unknow_Length)
+
+                        Console.WriteLine("Salvando ""ExHeader.bin""...")
+                        File.WriteAllBytes(Path.Combine(Work_Dir, "ExHeader.bin"), Unknow)
                     End If
                 Else
                     Console.ForegroundColor = ConsoleColor.Red
@@ -255,33 +274,45 @@ Module ModMain
                     Data.WriteByte(Value)
                 Next
                 Dim Generations_Count As Integer = Integer.Parse(Regex.Match(Header_Section, "<GenerationsCount>(\d+)</GenerationsCount>", RegexOptions.IgnoreCase).Groups(1).Value)
+                Dim Net_Object_Count As Integer = Integer.Parse(Regex.Match(Header_Section, "<NetObjCount>(\d+)</NetObjCount>", RegexOptions.IgnoreCase).Groups(1).Value)
                 Dim Engine_Version As Integer = Integer.Parse(Regex.Match(Header_Section, "<EngineVersion>(\d+)</EngineVersion>", RegexOptions.IgnoreCase).Groups(1).Value)
                 Dim Cooker_Version As Integer = Integer.Parse(Regex.Match(Header_Section, "<CookerVersion>(\d+)</CookerVersion>", RegexOptions.IgnoreCase).Groups(1).Value)
                 Dim ExFlags As Integer = Convert.ToInt32(Regex.Match(Header_Section, "<ExFlags>0x([0-9A-Fa-f]+)</ExFlags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
 
                 Write32(Data, Base_Offset + 64, Generations_Count)
+                Write32(Data, Base_Offset + 76, Net_Object_Count)
                 Write32(Data, Base_Offset + (Generations_Count * 12) + 68, Engine_Version)
                 Write32(Data, Base_Offset + (Generations_Count * 12) + 72, Cooker_Version)
                 Write32(Data, Base_Offset + (Generations_Count * 12) + 84, ExFlags)
 
                 Dim Names_Offset As Integer = Base_Offset + (Generations_Count * 12) + 92
+                If File.Exists(Path.Combine(File_Name, "ExHeader.bin")) Then
+                    Dim Unknow() As Byte = File.ReadAllBytes(Path.Combine(File_Name, "ExHeader.bin"))
+                    Data.Write(Unknow, 0, Unknow.Length)
+                    Names_Offset += Unknow.Length - 4
+                End If
+
                 Dim Names_Section As String = Regex.Match(Header_Section, "<Names>(.+?)</Names>", RegexOptions.Singleline Or RegexOptions.IgnoreCase).Groups(1).Value
                 Dim Names_Entries As MatchCollection = Regex.Matches(Names_Section, "<Entry>(.+?)</Entry>", RegexOptions.Singleline Or RegexOptions.IgnoreCase)
+                Dim Name_Table(Names_Entries.Count - 1) As String
                 Write32(Data, Base_Offset + 4, Names_Entries.Count)
                 If Generations_Count > 0 Then Write32(Data, Base_Offset + 72, Names_Entries.Count)
                 Write32(Data, Base_Offset + 8, Names_Offset)
+                Dim Name_Entry As Integer = 0
                 For Each Entry As Match In Names_Entries
                     Dim Content As String = Entry.Groups(1).Value
                     Dim Text As String = Regex.Match(Content, "<Text>(.+?)</Text>", RegexOptions.IgnoreCase).Groups(1).Value
                     Dim Text_Flags As UInt64 = Convert.ToUInt64(Regex.Match(Content, "<Flags>0x([0-9A-Fa-f]+)</Flags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
+                    Name_Table(Name_Entry) = Text
 
-                    Dim Text_Bytes() As Byte = Encoding.ASCII.GetBytes(Text)
+                    Dim Text_Bytes() As Byte = Get_Bytes_From_Text(Text)
                     Write32(Data, Names_Offset, Text_Bytes.Length + 1)
                     Data.Write(Text_Bytes, 0, Text_Bytes.Count)
                     Data.WriteByte(0)
                     Names_Offset = Data.Position
                     Write64(Data, Names_Offset, Text_Flags)
                     Names_Offset += 8
+                    Name_Entry += 1
                 Next
 
                 Dim Import_Offset As Integer = Names_Offset
@@ -296,11 +327,13 @@ Module ModMain
                     Dim Class_Index As String = Integer.Parse(Regex.Match(Content, "<ClassNameIndex>(\d+)</ClassNameIndex>", RegexOptions.IgnoreCase).Groups(1).Value)
                     Dim Outer As Integer = Integer.Parse(Regex.Match(Content, "<Outer>([-]?\d+)</Outer>", RegexOptions.IgnoreCase).Groups(1).Value)
                     Dim Object_Index As String = Integer.Parse(Regex.Match(Content, "<ObjectNameIndex>(\d+)</ObjectNameIndex>", RegexOptions.IgnoreCase).Groups(1).Value)
+                    Dim Unknow_Index As String = Integer.Parse(Regex.Match(Content, "<ExIndex>(\d+)</ExIndex>", RegexOptions.IgnoreCase).Groups(1).Value)
 
                     Write32(Data, Import_Offset, Package_Index)
                     Write32(Data, Import_Offset + 8, Class_Index)
                     Write32(Data, Import_Offset + 16, Outer)
                     Write32(Data, Import_Offset + 20, Object_Index)
+                    Write32(Data, Import_Offset + 24, Unknow_Index)
 
                     Import_Offset += 28
                 Next
@@ -337,10 +370,12 @@ Module ModMain
                         End
                     End If
                     Dim File_Data() As Byte = File.ReadAllBytes(Path.Combine(File_Name, Temp_File))
-                    Dim FType As Integer = Integer.Parse(Regex.Match(Content, "<Class>([-]?\d+)</Class>", RegexOptions.IgnoreCase).Groups(1).Value)
+                    Dim ObjTypeRef As Integer = Integer.Parse(Regex.Match(Content, "<Class>([-]?\d+)</Class>", RegexOptions.IgnoreCase).Groups(1).Value)
+                    Dim ParentClassRef As Integer = Integer.Parse(Regex.Match(Content, "<ParentClassRef>([-]?\d+)</ParentClassRef>", RegexOptions.IgnoreCase).Groups(1).Value)
                     Dim Name_Index As Integer = Integer.Parse(Regex.Match(Content, "<NameIndex>(\d+)</NameIndex>", RegexOptions.IgnoreCase).Groups(1).Value)
                     Dim Object_Reference As Integer = Integer.Parse(Regex.Match(Content, "<ObjReference>([-]?\d+)</ObjReference>", RegexOptions.IgnoreCase).Groups(1).Value) + 1
-                    Dim Reference_Index As Integer = Integer.Parse(Regex.Match(Content, "<SNWIndex>([-]?\d+)</SNWIndex>", RegexOptions.IgnoreCase).Groups(1).Value)
+                    Dim Name_Count As Integer = Integer.Parse(Regex.Match(Content, "<NameCount>([-]?\d+)</NameCount>", RegexOptions.IgnoreCase).Groups(1).Value) + 1
+                    Dim OwnerRef As Integer = Integer.Parse(Regex.Match(Content, "<OwnerRef>([-]?\d+)</OwnerRef>", RegexOptions.IgnoreCase).Groups(1).Value)
                     Dim Flags_1 As UInt64 = Convert.ToUInt64(Regex.Match(Content, "<Flags>0x([0-9A-Fa-f]+)</Flags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
                     Dim Exporter_Flags As Integer = Convert.ToInt32(Regex.Match(Content, "<ExporterFlags>0x([0-9A-Fa-f]+)</ExporterFlags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
                     Dim Length As Integer = Integer.Parse(Regex.Match(Content, "<EntryLength>([-]?\d+)</EntryLength>", RegexOptions.IgnoreCase).Groups(1).Value)
@@ -350,7 +385,7 @@ Module ModMain
                         Dim SubText As String = Encoding.UTF8.GetString(TempTxtData)
                         Dim Match As Match = Regex.Match(SubText, "\[" & Temp_File & "\]\r\n(.+?)\r\n\[END\]")
                         If Match.Success Then
-                            If FType = -3 Then
+                            If ObjTypeRef = -3 Then
                                 Dim Text_Count As Integer = Read32(File_Data, &H8C)
                                 Dim Sub_Offset As Integer = &HA8
                                 For Index As Integer = 0 To Text_Count - 1
@@ -394,7 +429,7 @@ Module ModMain
                                 End If
                             End If
 
-                            If Names_Entries(Name_Index).Groups(1).Value = "DisConv_Blurb" Then
+                            If Name_Table(Name_Index) = "DisConv_Blurb" Then
                                 Dim Temp As New MemoryStream()
                                 Dim Sub_Offset As Integer = If(Read32(File_Data, &H76) And 4, &H9A, &HB3)
                                 Dim Text_Length As Integer = Read32(File_Data, Sub_Offset)
@@ -405,14 +440,17 @@ Module ModMain
                                 Temp.WriteByte(0)
                                 Dim Val As Integer = Sub_Offset + 4 + Text_Length
                                 Temp.Write(File_Data, Val, File_Data.Length - Val)
+                                File_Data = Temp.ToArray()
                             End If
                         End If
                     End If
 
-                    Write32(Data, Export_Offset, FType)
-                    Write32(Data, Export_Offset + 8, Reference_Index)
+                    Write32(Data, Export_Offset, ObjTypeRef)
+                    Write32(Data, Export_Offset + 4, ParentClassRef)
+                    Write32(Data, Export_Offset + 8, OwnerRef)
                     Write32(Data, Export_Offset + 12, Name_Index)
                     Write32(Data, Export_Offset + 16, Object_Reference)
+                    Write32(Data, Export_Offset + 20, Name_Count)
                     Write64(Data, Export_Offset + 24, Flags_1)
                     Write32(Data, Export_Offset + 32, File_Data.Length)
                     Write32(Data, Export_Offset + 36, File_Offset)
