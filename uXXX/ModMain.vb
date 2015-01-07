@@ -74,14 +74,14 @@ Module ModMain
                     Next
                     Header_XML.AppendLine(TAB & "<GUID>" & GUID & "</GUID>")
 
-                    Dim GensCount As Integer = Read32(Data, Base_Offset + 64)
-                    Dim Engine_Version As Integer = Read32(Data, Base_Offset + (GensCount * 12) + 68)
-                    Dim Cooker_Version As Integer = Read32(Data, Base_Offset + (GensCount * 12) + 72)
-                    Dim Data_2 As Integer = Read32(Data, Base_Offset + (GensCount * 12) + 84)
+                    Dim Generations_Count As Integer = Read32(Data, Base_Offset + 64)
+                    Dim Engine_Version As Integer = Read32(Data, Base_Offset + (Generations_Count * 12) + 68)
+                    Dim Cooker_Version As Integer = Read32(Data, Base_Offset + (Generations_Count * 12) + 72)
+                    Dim Data_2 As Integer = Read32(Data, Base_Offset + (Generations_Count * 12) + 84)
 
                     Header_XML.AppendLine(TAB & "<EngineVersion>" & Engine_Version & "</EngineVersion>")
                     Header_XML.AppendLine(TAB & "<CookerVersion>" & Cooker_Version & "</CookerVersion>")
-                    Header_XML.AppendLine(TAB & "<GenerationsCount>" & GensCount & "</GenerationsCount>")
+                    Header_XML.AppendLine(TAB & "<GenerationsCount>" & Generations_Count & "</GenerationsCount>")
                     Header_XML.AppendLine(TAB & "<ExFlags>" & "0x" & Hex(Data_2).PadLeft(8, "0"c) & "</ExFlags>") 'Não sei o que é D:
                     Header_XML.AppendLine(TAB & "<ZeroPadLength>" & Zero_Pad_Length & "</ZeroPadLength>")
 
@@ -107,8 +107,10 @@ Module ModMain
                         Dim Reference_Index As Integer = Read32(Data, EOffset + 8)
                         Dim Name_Index As Integer = Read32(Data, EOffset + 12)
                         Dim Object_Reference As Integer = Read32(Data, EOffset + 16) - 1
-                        Dim Name As String = ReadName(Data, Names_Offset, Names_Count, Name_Index)
+                        Dim Object_Name As String = ReadName(Data, Names_Offset, Names_Count, Name_Index)
+                        Dim Name As String = Object_Name
                         If Object_Reference > -1 Then Name &= "_" & Object_Reference
+                        Name &= "_" & Entry
                         Dim Flags_1 As UInt64 = Read64(Data, EOffset + 24)
                         Dim File_Length As Integer = Read32(Data, EOffset + 32)
                         Dim File_Offset As Integer = Read32(Data, EOffset + 36)
@@ -138,6 +140,16 @@ Module ModMain
                                     Text_Out.AppendLine(Subtitle)
                                     Text_Out.AppendLine("[END]")
                                 End If
+                            End If
+
+                            If Object_Name = "DisConv_Blurb" Then
+                                Dim Sub_Offset As Integer = If(Read32(Data, File_Offset + &H76) And 4, &H9A, &HB3)
+                                Dim Text_Length As Integer = Read32(Data, File_Offset + Sub_Offset)
+                                Dim Subtitle As String = ReadStr(Data, File_Offset + Sub_Offset + 4, Text_Length - 1)
+
+                                Text_Out.AppendLine("[" & Name & "]")
+                                Text_Out.AppendLine(Subtitle)
+                                Text_Out.AppendLine("[END]")
                             End If
                         Catch
                             Debug.WriteLine("Erro ao extrair texto :/")
@@ -235,6 +247,7 @@ Module ModMain
                 Dim Base_Offset As Integer = Data.Position
                 Dim Flags As Integer = Convert.ToInt32(Regex.Match(Header_Section, "<Flags>0x([0-9A-Fa-f]+)</Flags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
                 Write32(Data, Base_Offset, Flags)
+                Data.Seek(Base_Offset + 48, SeekOrigin.Begin)
                 Dim GUID As String = Regex.Match(Header_Section, "<GUID>0x([0-9A-Fa-f]+)</GUID>", RegexOptions.IgnoreCase).Groups(1).Value
                 For Position As Integer = 0 To GUID.Length - 1 Step 2
                     Dim Hex_Value As String = GUID.Substring(Position, 2)
@@ -332,51 +345,66 @@ Module ModMain
                     Dim Exporter_Flags As Integer = Convert.ToInt32(Regex.Match(Content, "<ExporterFlags>0x([0-9A-Fa-f]+)</ExporterFlags>", RegexOptions.IgnoreCase).Groups(1).Value, 16)
                     Dim Length As Integer = Integer.Parse(Regex.Match(Content, "<EntryLength>([-]?\d+)</EntryLength>", RegexOptions.IgnoreCase).Groups(1).Value)
 
-                    If File.Exists(Path.Combine(File_Name, "Textos.txt")) And FType = -3 Then 'Re-insere o texto
+                    If File.Exists(Path.Combine(File_Name, "Textos.txt")) Then 'Re-insere o texto
                         Dim TempTxtData() As Byte = File.ReadAllBytes(Path.Combine(File_Name, "Textos.txt"))
                         Dim SubText As String = Encoding.UTF8.GetString(TempTxtData)
                         Dim Match As Match = Regex.Match(SubText, "\[" & Temp_File & "\]\r\n(.+?)\r\n\[END\]")
                         If Match.Success Then
-                            Dim Text_Count As Integer = Read32(File_Data, &H8C)
-                            Dim Sub_Offset As Integer = &HA8
-                            For Index As Integer = 0 To Text_Count - 1
-                                Dim Len As Integer = Read32(File_Data, Sub_Offset)
-                                Sub_Offset += Len + &H40
-                            Next
-                            Sub_Offset += &H20
-                            If Sub_Offset < File_Data.Length Then
-                                If ReadStr(File_Data, Sub_Offset, 3) = "INT" Then 'Magic, texto em inglês
-                                    Dim Temp As New MemoryStream()
-                                    Sub_Offset += &H38
-                                    Dim Subs(0) As String
-                                    If Match.Groups(1).Value.IndexOf("\n") > -1 Then
-                                        Subs = Regex.Split(Match.Groups(1).Value, "\\n")
-                                    Else
-                                        Subs(0) = Match.Groups(1).Value
-                                    End If
-
-                                    Temp.Write(File_Data, 0, Sub_Offset)
-                                    Dim OriginalPos As Integer = Sub_Offset
-                                    Dim Index As Integer = 0
-                                    For Each Subtitle As String In Subs
-                                        Dim Text_Length As Integer = Read32(File_Data, OriginalPos)
-                                        Dim SubBytes() As Byte = Get_Bytes_From_Text(Subtitle.TrimStart())
-                                        Write32(Temp, Temp.Position, SubBytes.Length + 1)
-                                        Temp.Write(SubBytes, 0, SubBytes.Length)
-                                        Temp.WriteByte(0)
-                                        Dim Val As Integer = OriginalPos + 4 + Text_Length
-                                        If Index = Text_Count - 1 Then
-                                            Temp.Write(File_Data, Val, File_Data.Length - Val)
+                            If FType = -3 Then
+                                Dim Text_Count As Integer = Read32(File_Data, &H8C)
+                                Dim Sub_Offset As Integer = &HA8
+                                For Index As Integer = 0 To Text_Count - 1
+                                    Dim Len As Integer = Read32(File_Data, Sub_Offset)
+                                    Sub_Offset += Len + &H40
+                                Next
+                                Sub_Offset += &H20
+                                If Sub_Offset < File_Data.Length Then
+                                    If ReadStr(File_Data, Sub_Offset, 3) = "INT" Then 'Magic, texto em inglês
+                                        Dim Temp As New MemoryStream()
+                                        Sub_Offset += &H38
+                                        Dim Subs(0) As String
+                                        If Match.Groups(1).Value.IndexOf("\n") > -1 Then
+                                            Subs = Regex.Split(Match.Groups(1).Value, "\\n")
                                         Else
-                                            Temp.Write(File_Data, Val, &H3C)
+                                            Subs(0) = Match.Groups(1).Value
                                         End If
 
-                                        OriginalPos += Text_Length + &H40
-                                        Index += 1
-                                        If Index > Text_Count - 1 Then Exit For
-                                    Next
-                                    File_Data = Temp.ToArray()
+                                        Temp.Write(File_Data, 0, Sub_Offset)
+                                        Dim OriginalPos As Integer = Sub_Offset
+                                        Dim Index As Integer = 0
+                                        For Each Subtitle As String In Subs
+                                            Dim Text_Length As Integer = Read32(File_Data, OriginalPos)
+                                            Dim SubBytes() As Byte = Get_Bytes_From_Text(Subtitle.TrimStart())
+                                            Write32(Temp, Temp.Position, SubBytes.Length + 1)
+                                            Temp.Write(SubBytes, 0, SubBytes.Length)
+                                            Temp.WriteByte(0)
+                                            Dim Val As Integer = OriginalPos + 4 + Text_Length
+                                            If Index = Text_Count - 1 Then
+                                                Temp.Write(File_Data, Val, File_Data.Length - Val)
+                                            Else
+                                                Temp.Write(File_Data, Val, &H3C)
+                                            End If
+
+                                            OriginalPos += Text_Length + &H40
+                                            Index += 1
+                                            If Index > Text_Count - 1 Then Exit For
+                                        Next
+                                        File_Data = Temp.ToArray()
+                                    End If
                                 End If
+                            End If
+
+                            If Names_Entries(Name_Index).Groups(1).Value = "DisConv_Blurb" Then
+                                Dim Temp As New MemoryStream()
+                                Dim Sub_Offset As Integer = If(Read32(File_Data, &H76) And 4, &H9A, &HB3)
+                                Dim Text_Length As Integer = Read32(File_Data, Sub_Offset)
+                                Dim SubBytes() As Byte = Get_Bytes_From_Text(Match.Groups(1).Value.TrimStart())
+                                Temp.Write(File_Data, 0, Sub_Offset)
+                                Write32(Temp, Temp.Position, SubBytes.Length + 1)
+                                Temp.Write(SubBytes, 0, SubBytes.Length)
+                                Temp.WriteByte(0)
+                                Dim Val As Integer = Sub_Offset + 4 + Text_Length
+                                Temp.Write(File_Data, Val, File_Data.Length - Val)
                             End If
                         End If
                     End If
@@ -397,6 +425,7 @@ Module ModMain
                         Data.WriteByte(Value)
                     Next
 
+                    Console.WriteLine("Inserindo " & Temp_File & "...")
                     Data.Seek(File_Offset, SeekOrigin.Begin)
                     Data.Write(File_Data, 0, File_Data.Length)
                     File_Offset += File_Data.Length
@@ -421,7 +450,6 @@ Module ModMain
         Loop While Remaining_Args > 0
 
         Console.ResetColor()
-        'Console.ReadKey()
     End Sub
 
     Public Function Read64(Data() As Byte, Address As Integer) As UInt64
