@@ -409,7 +409,7 @@ Module ModMain
                                         Dim Index As Integer = 0
                                         For Each Subtitle As String In Subs
                                             Dim Text_Length As Integer = Read32(File_Data, OriginalPos)
-                                            Dim SubBytes() As Byte = Get_Bytes_From_Text(Subtitle.TrimStart())
+                                            Dim SubBytes() As Byte = Get_Bytes_From_Text(Subtitle)
                                             Write32(Temp, Temp.Position, SubBytes.Length + 1)
                                             Temp.Write(SubBytes, 0, SubBytes.Length)
                                             Temp.WriteByte(0)
@@ -433,7 +433,7 @@ Module ModMain
                                 Dim Temp As New MemoryStream()
                                 Dim Sub_Offset As Integer = If(Read32(File_Data, &H76) And 4, &H9A, &HB3)
                                 Dim Text_Length As Integer = Read32(File_Data, Sub_Offset)
-                                Dim SubBytes() As Byte = Get_Bytes_From_Text(Match.Groups(1).Value.TrimStart())
+                                Dim SubBytes() As Byte = Get_Bytes_From_Text(Match.Groups(1).Value)
                                 Temp.Write(File_Data, 0, Sub_Offset)
                                 Write32(Temp, Temp.Position, SubBytes.Length + 1)
                                 Temp.Write(SubBytes, 0, SubBytes.Length)
